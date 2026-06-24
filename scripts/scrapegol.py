@@ -1,6 +1,7 @@
 import asyncio
 import random
 import os
+import re
 import pandas as pd
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
@@ -12,34 +13,17 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
 OUTPUT_PATH = os.path.join(DATA_DIR, "lol_data_2025.csv")
 
-
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
-tournament_urls = {
-    "LTA_Split1": "https://gol.gg/tournament/tournament-matchlist/LTA%20North%202025%20Split%201/"
-}
-
-async def get_match_ids(page, url):
-    print(f"Finding Match IDs from: {url}")
-    try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        html = await page.content()
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        ids = []
-        links = soup.find_all('a', href=lambda x: x and '/game/stats/' in x)
-        for link in links:
-            parts = link['href'].split('/')
-            if 'stats' in parts:
-                idx = parts.index('stats')
-                match_id = parts[idx+1]
-                if match_id.isdigit():
-                    ids.append(match_id)
-        return list(set(ids))
-    except Exception as e:
-        print(f"Error fetching match list from {url}: {e}")
-        return []
+def parse_header_gold(gold_text):
+    clean_gold = gold_text.lower().strip()
+    num_part = re.sub(r'[^0-9.]', '', clean_gold)
+    if num_part:
+        if 'k' in clean_gold:
+            return float(num_part) * 1000
+        return float(num_part)
+    return 0.0
 
 async def scrape_game_details(page, match_id, region):
     game_url = f"https://gol.gg/game/stats/{match_id}/page-game/"
@@ -59,11 +43,22 @@ async def scrape_game_details(page, match_id, region):
         team_red = red_header.find('a').get_text(strip=True)
         winner = team_blue if "WIN" in blue_header.get_text() else team_red
         
+        
+        gold_imgs = soup_game.find_all('img', alt='Team Gold')
+        blue_gold = 0.0
+        red_gold = 0.0
+        
+        if len(gold_imgs) >= 2:
+            blue_gold_text = gold_imgs[0].parent.get_text(strip=True)
+            red_gold_text = gold_imgs[1].parent.get_text(strip=True)
+            blue_gold = parse_header_gold(blue_gold_text)
+            red_gold = parse_header_gold(red_gold_text)
+
         player_to_info = {}
         player_data = {}
         team_stats = {
-            team_blue: {"kills": 0, "gold": 0.0},
-            team_red: {"kills": 0, "gold": 0.0}
+            team_blue: {"kills": 0},
+            team_red: {"kills": 0}
         }
         
         player_links = soup_game.find_all('a', href=lambda x: x and '../players/player-stats/' in x)
@@ -75,34 +70,20 @@ async def scrape_game_details(page, match_id, region):
                 parent_row = link.find_parent('tr')
                 tds = parent_row.find_all('td')
                 
-                
                 champ_img = parent_row.find('img', src=lambda x: x and 'champions_icon' in x)
                 champ_name = champ_img.get('alt', 'Unknown') if champ_img else "Unknown"
                 
-                
                 current_team = team_blue if len(seen_players) < 5 else team_red
                 player_to_info[name] = {"team": current_team}
-                
                 
                 texts = [td.get_text(strip=True) for td in tds]
                 try:
                     k, d, a = texts[2], texts[3], texts[4]
                     cs = texts[6] if len(texts) > 6 else "0"
-                    gold_str = texts[8] if len(texts) > 8 else "0"
                 except IndexError:
-                    k, d, a, cs, gold_str = "0", "0", "0", "0", "0"
+                    k, d, a, cs = "0", "0", "0", "0"
 
-                
-                gold_val = 0.0
-                if 'k' in gold_str:
-                    gold_val = float(gold_str.replace('k', '')) * 1000
-                elif gold_str.replace('.', '', 1).isdigit():
-                    gold_val = float(gold_str)
-
-                
                 team_stats[current_team]["kills"] += int(k) if k.isdigit() else 0
-                team_stats[current_team]["gold"] += gold_val
-                
                 
                 player_data[len(seen_players) + 1] = {
                     "champ": champ_name,
@@ -114,7 +95,7 @@ async def scrape_game_details(page, match_id, region):
             if len(seen_players) == 10: 
                 break
 
-        
+       
         await page.goto(timeline_url, wait_until="domcontentloaded", timeout=60000)
         soup_time = BeautifulSoup(await page.content(), 'html.parser')
         timeline_table = soup_time.find('table', class_='timeline')
@@ -138,7 +119,7 @@ async def scrape_game_details(page, match_id, region):
                         elif red_ft5_kills == 5: ft5_winner = team_red
                 if blue_ft5_kills >= 5 or red_ft5_kills >= 5: break
 
-        
+       
         entry = {
             "Game ID": match_id,
             "Year": YEAR,
@@ -147,12 +128,11 @@ async def scrape_game_details(page, match_id, region):
             "Team Red": team_red,
             "Winner": winner,
             "FT5 Winner": ft5_winner,
-            "Team Blue total gold": team_stats[team_blue]["gold"],
-            "Team Red Total gold": team_stats[team_red]["gold"],
+            "Team Blue total gold": blue_gold,
+            "Team Red Total gold": red_gold,
             "Team blue total kills": team_stats[team_blue]["kills"],
             "team red total kills": team_stats[team_red]["kills"]
         }
-        
         
         for i in range(1, 11):
             p = player_data.get(i, {"champ": "N/A", "name": "N/A", "k": "0", "d": "0", "a": "0", "cs": "0"})
@@ -174,39 +154,23 @@ async def main():
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = await context.new_page()
-        scraped_ids = set()
 
-        for region_key, url in tournament_urls.items():
-            region_name = region_key.split('_')[0] 
-            base_ids = await get_match_ids(page, url)
-            
-            
-            expanded_ids = []
-            for bid in base_ids:
-                for i in range(6): 
-                    expanded_ids.append(str(int(bid) + i))
-            
-            unique_ids = sorted(list(set(expanded_ids)))
-            
-            for mid in unique_ids:
-                if mid in scraped_ids: continue
-                
-                print(f"Scraping {region_name} | ID: {mid}...")
-                data = await scrape_game_details(page, mid, region_name)
-                
-                if data:
-                    all_results.append(data)
-                    scraped_ids.add(mid)
-                
-                await asyncio.sleep(random.uniform(4, 7))
+       
+        test_match_id = "63925"
+        test_region = "LTA"
+        
+        print(f"Testing Scraper on {test_region} | ID: {test_match_id}...")
+        data = await scrape_game_details(page, test_match_id, test_region)
+        
+        if data:
+            all_results.append(data)
         
         await browser.close()
     
     df = pd.DataFrame(all_results)
     df.to_csv(OUTPUT_PATH, index=False)
-    print(f"SUCCESS: 2025 Data saved to {OUTPUT_PATH}")
+    print(f"SUCCESS: Test Data saved to {OUTPUT_PATH}")
     return df
-
 
 if __name__ == "__main__":
     asyncio.run(main())
