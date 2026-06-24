@@ -1,5 +1,4 @@
 import asyncio
-import random
 import os
 import re
 import pandas as pd
@@ -28,7 +27,7 @@ async def scrape_game_details(page, match_id, region):
     game_url = f"https://gol.gg/game/stats/{match_id}/page-game/"
     
     try:
-    
+      
         await page.goto(game_url, wait_until="domcontentloaded", timeout=60000)
         html_content = await page.content()
         soup_game = BeautifulSoup(html_content, 'html.parser')
@@ -42,14 +41,14 @@ async def scrape_game_details(page, match_id, region):
         team_red = red_header.find('a').get_text(strip=True)
         winner = team_blue if "WIN" in blue_header.get_text() else team_red
         
-       
+        
         gold_imgs = soup_game.find_all('img', alt='Team Gold')
         blue_gold, red_gold = 0.0, 0.0
         if len(gold_imgs) >= 2:
             blue_gold = parse_header_gold(gold_imgs[0].parent.get_text(strip=True))
             red_gold = parse_header_gold(gold_imgs[1].parent.get_text(strip=True))
 
-      
+       
         kill_imgs = soup_game.find_all('img', alt='Kills')
         blue_kills, red_kills = 0, 0
         if len(kill_imgs) >= 2:
@@ -58,26 +57,29 @@ async def scrape_game_details(page, match_id, region):
             blue_kills = int(re.sub(r'[^0-9]', '', blue_kills_text) or 0)
             red_kills = int(re.sub(r'[^0-9]', '', red_kills_text) or 0)
 
-   
-        gold_match = re.search(r"var blueGoldData\s*=\s*\{.*?data:\s*\[(.*?)\].*?data:\s*\[(.*?)\]", html_content, re.DOTALL)
-        if gold_match:
-            b_gold_raw = [float(x.strip()) for x in gold_match.group(1).split(',')]
-            r_gold_raw = [float(x.strip()) for x in gold_match.group(2).split(',')]
+        
+        blue_gold_dist, red_gold_dist = ["0"]*5, ["0"]*5
+        blue_dmg_dist, red_dmg_dist = ["0"]*5, ["0"]*5
+        
+        small_tables = soup_game.find_all('table', class_='small_table')
+        if len(small_tables) >= 2:
            
-            blue_gold_dist = [b_gold_raw[4], b_gold_raw[3], b_gold_raw[0], b_gold_raw[1], b_gold_raw[2]]
-            red_gold_dist =  [r_gold_raw[4], r_gold_raw[3], r_gold_raw[0], r_gold_raw[1], r_gold_raw[2]]
-        else:
-            blue_gold_dist, red_gold_dist = [0]*5, [0]*5
+            gold_rows = small_tables[0].find_all('tr')[1:6] 
+            for i, row in enumerate(gold_rows):
+                cols = row.find_all('td')
+                if len(cols) == 3:
+                    blue_gold_dist[i] = cols[1].get_text(strip=True).replace('%', '')
+                    red_gold_dist[i] = cols[2].get_text(strip=True).replace('%', '')
 
-        
-        dmg_match = re.search(r"var blueDmgData\s*=\s*\{.*?data:\s*\[(.*?)\].*?data:\s*\[(.*?)\]", html_content, re.DOTALL)
-        if dmg_match:
-            blue_dmg_dist = [float(x.strip()) for x in dmg_match.group(1).split(',')]
-            red_dmg_dist =  [float(x.strip()) for x in dmg_match.group(2).split(',')]
-        else:
-            blue_dmg_dist, red_dmg_dist = [0]*5, [0]*5
+           
+            dmg_rows = small_tables[1].find_all('tr')[1:6] 
+            for i, row in enumerate(dmg_rows):
+                cols = row.find_all('td')
+                if len(cols) == 3:
+                    blue_dmg_dist[i] = cols[1].get_text(strip=True).replace('%', '')
+                    red_dmg_dist[i] = cols[2].get_text(strip=True).replace('%', '')
 
-        
+       
         player_data = {}
         player_links = soup_game.find_all('a', href=lambda x: x and '../players/player-stats/' in x)
         
@@ -95,7 +97,7 @@ async def scrape_game_details(page, match_id, region):
                 is_blue = idx < 5
                 role_idx = idx if is_blue else idx - 5
                 
-               
+                
                 if len(tds) >= 2:
                     kda_val = tds[-2].get_text(strip=True)
                     cs_val = tds[-1].get_text(strip=True)
@@ -107,6 +109,7 @@ async def scrape_game_details(page, match_id, region):
                 else:
                     k, d, a = "0", "0", "0"
 
+               
                 gold_share = blue_gold_dist[role_idx] if is_blue else red_gold_dist[role_idx]
                 dmg_share = blue_dmg_dist[role_idx] if is_blue else red_dmg_dist[role_idx]
                 
@@ -137,7 +140,7 @@ async def scrape_game_details(page, match_id, region):
         }
         
         for i in range(1, 11):
-            p = player_data.get(i, {"champ": "N/A", "name": "N/A", "k": "0", "d": "0", "a": "0", "cs": "0", "gold_pct": 0, "dmg_pct": 0})
+            p = player_data.get(i, {"champ": "N/A", "name": "N/A", "k": "0", "d": "0", "a": "0", "cs": "0", "gold_pct": "0", "dmg_pct": "0"})
             entry[f"Champ {i}"] = p["champ"]
             entry[f"Player {i}"] = p["name"]
             entry[f"player {i} k"] = p["k"]
