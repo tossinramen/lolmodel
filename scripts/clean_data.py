@@ -54,19 +54,25 @@ def clean_and_flatten():
 
         players_df = df[df["participantid"].isin(range(1, 11))].copy()
 
-        # FIX: Drop metadata columns EXCEPT gameid, because we need gameid to pivot!
         opp_cols = [c for c in players_df.columns if str(c).startswith("opp_")]
         meta_cols_to_drop = [c for c in valid_meta_cols if c != "gameid"]
         players_df = players_df.drop(columns=opp_cols + meta_cols_to_drop, errors='ignore')
 
         player_pivot = players_df.pivot(index="gameid", columns="participantid")
 
-        player_pivot.columns = [f"player{col[1]}_{col[0]}" for col in player_pivot.columns]
+        
+        player_pivot = player_pivot.swaplevel(axis=1).sort_index(axis=1)
+        
+       
+        player_pivot.columns = [f"player{col[0]}_{col[1]}" for col in player_pivot.columns]
         player_pivot = player_pivot.reset_index()
 
         final_df = pd.merge(game_metadata, player_pivot, on="gameid", how="left")
 
         final_df = final_df.dropna(axis=1, how="all")
+
+        
+        final_df = final_df.convert_dtypes()
 
         final_df.to_csv(output_path, index=False)
         print(f"Success! Cleaned and flattened data saved to {output_path}\n")
