@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 
-// Interfaces for Riot Data Dragon API structure
 interface Champion {
   id: string;
   name: string;
@@ -10,19 +9,12 @@ interface Champion {
 
 type SlotType = 'bluePick' | 'redPick' | 'blueBan' | 'redBan';
 
-interface ActiveSlot {
-  type: SlotType;
-  index: number;
-}
-
 export default function App() {
   // --- State Management ---
   const [champions, setChampions] = useState<Champion[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRole, setSelectedRole] = useState<string>('All');
-  
-  // Selection state: tracks which champion icon is clicked in the grid
   const [selectedChamp, setSelectedChamp] = useState<Champion | null>(null);
 
   // Draft Slots State
@@ -31,14 +23,12 @@ export default function App() {
   const [blueBans, setBlueBans] = useState<(Champion | null)[]>([null, null, null, null, null]);
   const [redBans, setRedBans] = useState<(Champion | null)[]>([null, null, null, null, null]);
 
-  // --- Fetch Champion Data from Riot Data Dragon ---
+  // --- Fetch Champion Data ---
   useEffect(() => {
-    // Fetching patch 14.5.1 data (standard stable version)
     fetch('https://ddragon.leagueoflegends.com/cdn/14.5.1/data/en_US/champion.json')
       .then((res) => res.json())
       .then((data) => {
         const champList = Object.values(data.data) as Champion[];
-        // Sort alphabetically
         champList.sort((a, b) => a.name.localeCompare(b.name));
         setChampions(champList);
         setLoading(false);
@@ -46,209 +36,156 @@ export default function App() {
       .catch((err) => console.error('Error loading champions:', err));
   }, []);
 
-  // --- Dynamic Math Modeling (Win Probability) ---
-  // Calculates a mock win probability based on team composition sizes
+  // --- Win Probability Logic ---
   const winProbability = useMemo(() => {
     const activeBluePicks = bluePicks.filter(Boolean).length;
     const activeRedPicks = redPicks.filter(Boolean).length;
-    
     if (activeBluePicks === 0 && activeRedPicks === 0) return 50;
-    
-    // Core calculation logic: gives slight balance adjustments based on team sizes
-    // Replace this with a real fetch to your FastAPI endpoint once ready
-    const baseOffset = (activeBluePicks - activeRedPicks) * 2.5;
-    const finalProb = 50 + baseOffset;
-    return Math.max(10, Math.min(90, finalProb));
+    const baseOffset = (activeBluePicks - activeRedPicks) * 4;
+    return Math.max(15, Math.min(85, 50 + baseOffset));
   }, [bluePicks, redPicks]);
 
-  // --- Click & Assign Mechanics ---
+  // --- Slot Clicking Assignment Mechanics ---
   const handleSlotClick = (type: SlotType, index: number) => {
-    // If a champion is selected from the grid, place it in the clicked slot
     if (selectedChamp) {
-      if (type === 'bluePick') {
-        const next = [...bluePicks]; next[index] = selectedChamp; setBluePicks(next);
-      } else if (type === 'redPick') {
-        const next = [...redPicks]; next[index] = selectedChamp; setRedPicks(next);
-      } else if (type === 'blueBan') {
-        const next = [...blueBans]; next[index] = selectedChamp; setBlueBans(next);
-      } else if (type === 'redBan') {
-        const next = [...redBans]; next[index] = selectedChamp; setRedBans(next);
-      }
-      setSelectedChamp(null); // Clear selection state after placing
+      if (type === 'bluePick') { const n = [...bluePicks]; n[index] = selectedChamp; setBluePicks(n); }
+      else if (type === 'redPick') { const n = [...redPicks]; n[index] = selectedChamp; setRedPicks(n); }
+      else if (type === 'blueBan') { const n = [...blueBans]; n[index] = selectedChamp; setBlueBans(n); }
+      else if (type === 'redBan') { const n = [...redBans]; n[index] = selectedChamp; setRedBans(n); }
+      setSelectedChamp(null);
     } else {
-      // Clear slot if clicked without a selected champion
-      if (type === 'bluePick') {
-        const next = [...bluePicks]; next[index] = null; setBluePicks(next);
-      } else if (type === 'redPick') {
-        const next = [...redPicks]; next[index] = null; setRedPicks(next);
-      } else if (type === 'blueBan') {
-        const next = [...blueBans]; next[index] = null; setBlueBans(next);
-      } else if (type === 'redBan') {
-        const next = [...redBans]; next[index] = null; setRedBans(next);
-      }
+      if (type === 'bluePick') { const n = [...bluePicks]; n[index] = null; setBluePicks(n); }
+      else if (type === 'redPick') { const n = [...redPicks]; n[index] = null; setRedPicks(n); }
+      else if (type === 'blueBan') { const n = [...blueBans]; n[index] = null; setBlueBans(n); }
+      else if (type === 'redBan') { const n = [...redBans]; n[index] = null; setRedBans(n); }
     }
   };
 
-  // --- Filtering Logic ---
   const filteredChampions = useMemo(() => {
     return champions.filter((champ) => {
       const matchesSearch = champ.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (selectedRole === 'All') return matchesSearch;
-      
-      // DataDragon uses archetype tags instead of positional tags
       const tagMap: Record<string, string> = {
-        'TOP': 'Fighter',
-        'JNG': 'Assassin',
-        'MID': 'Mage',
-        'ADC': 'Marksman',
-        'SUP': 'Support'
+        'TOP': 'Fighter', 'JNG': 'Assassin', 'MID': 'Mage', 'ADC': 'Marksman', 'SUP': 'Support'
       };
       return matchesSearch && champ.tags.includes(tagMap[selectedRole]);
     });
   }, [champions, searchQuery, selectedRole]);
 
   if (loading) {
-    return <div className="h-screen bg-slate-950 text-white flex items-center justify-center">Loading Data Dragon Assets...</div>;
+    return (
+      <div style={{ height: '100vh', backgroundColor: '#020617', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>
+        Loading League Assets...
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col font-sans select-none">
+    <div style={{ minHeight: '100vh', backgroundColor: '#020617', color: 'white', display: 'flex', flexDirection: 'column', fontFamily: 'sans-serif', userSelect: 'none' }}>
       
-      {/* 1. Dynamic Win Probability Bar */}
-      <div className="w-full h-12 bg-slate-900 flex relative border-b border-slate-800 text-sm font-bold tracking-wider">
-        <div 
-          className="bg-blue-600 flex items-center pl-4 transition-all duration-500 ease-out text-blue-100" 
-          style={{ width: `${winProbability}%` }}
-        >
+      {/* 1. Top Win Probability Bar */}
+      <div style={{ width: '100%', height: '48px', backgroundColor: '#0f172a', display: 'flex', relative: 'true', position: 'relative', borderBottom: '1px solid #1e293b', fontSize: '14px', fontWeight: 'bold', trackingWider: 'true' }}>
+        <div style={{ width: `${winProbability}%`, backgroundColor: '#2563eb', display: 'flex', alignItems: 'center', paddingLeft: '16px', transition: 'width 0.5s ease-out', color: '#dbeafe' }}>
           BLUE SIDE {winProbability.toFixed(1)}%
         </div>
-        <div 
-          className="bg-red-600 flex items-center justify-end pr-4 transition-all duration-500 ease-out text-red-100" 
-          style={{ width: `${100 - winProbability}%` }}
-        >
+        <div style={{ width: `${100 - winProbability}%`, backgroundColor: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '16px', transition: 'width 0.5s ease-out', color: '#fee2e2' }}>
           {(100 - winProbability).toFixed(1)}% RED SIDE
         </div>
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-slate-950/80 px-4 py-1 rounded border border-slate-700 uppercase text-xs">
-            Draft Advantage Model
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ backgroundColor: 'rgba(2, 6, 23, 0.85)', padding: '4px 16px', borderRadius: '4px', border: '1px solid #334155', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Live Draft Matchup Model
           </div>
         </div>
       </div>
 
-      {/* 2. Top Banner: Ban Slots */}
-      <div className="bg-slate-900/50 p-3 flex justify-between items-center px-8 border-b border-slate-900">
-        {/* Blue Bans */}
-        <div className="flex gap-2">
+      {/* 2. Ban Bar Layout */}
+      <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: '12px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #0f172a' }}>
+        {/* Blue Side Bans */}
+        <div style={{ display: 'flex', gap: '8px' }}>
           {blueBans.map((champ, idx) => (
             <div 
-              key={`blue-ban-${idx}`}
-              onClick={() => handleSlotClick('blueBan', idx)}
-              className={`w-10 h-10 border bg-slate-950 flex items-center justify-center cursor-pointer overflow-hidden transition-all ${champ ? 'border-blue-500/50 grayscale' : 'border-slate-800 hover:border-blue-500'}`}
+              key={`b-ban-${idx}`} onClick={() => handleSlotClick('blueBan', idx)}
+              style={{ width: '40px', height: '40px', border: champ ? '1px solid rgba(37, 99, 235, 0.5)' : '1px solid #1e293b', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', filter: champ ? 'grayscale(100%)' : 'none' }}
             >
-              {champ ? (
-                <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} alt={champ.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[10px] text-slate-600">BAN</span>
-              )}
+              {champ ? <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '10px', color: '#475569' }}>BAN</span>}
             </div>
           ))}
         </div>
 
-        <div className="text-xs tracking-widest text-slate-500 uppercase font-bold">Bans</div>
+        <div style={{ fontSize: '12px', letterSpacing: '2px', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Ban History</div>
 
-        {/* Red Bans */}
-        <div className="flex gap-2">
+        {/* Red Side Bans */}
+        <div style={{ display: 'flex', gap: '8px' }}>
           {redBans.map((champ, idx) => (
             <div 
-              key={`red-ban-${idx}`}
-              onClick={() => handleSlotClick('redBan', idx)}
-              className={`w-10 h-10 border bg-slate-950 flex items-center justify-center cursor-pointer overflow-hidden transition-all ${champ ? 'border-red-500/50 grayscale' : 'border-slate-800 hover:border-red-500'}`}
+              key={`r-ban-${idx}`} onClick={() => handleSlotClick('redBan', idx)}
+              style={{ width: '40px', height: '40px', border: champ ? '1px solid rgba(220, 38, 38, 0.5)' : '1px solid #1e293b', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', filter: champ ? 'grayscale(100%)' : 'none' }}
             >
-              {champ ? (
-                <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} alt={champ.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[10px] text-slate-600">BAN</span>
-              )}
+              {champ ? <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '10px', color: '#475569' }}>BAN</span>}
             </div>
           ))}
         </div>
       </div>
 
-      {/* 3. Main Dashboard Layout */}
-      <div className="flex flex-1 p-6 gap-6">
+      {/* 3. True Horizontal Core Layout */}
+      <div style={{ display: 'flex', flex: 1, padding: '24px', gap: '24px', boxSizing: 'border-box' }}>
         
-        {/* Left Side: Blue Team Picks */}
-        <div className="w-64 flex flex-col gap-3">
-          <h2 className="text-xs font-bold tracking-widest text-blue-400 uppercase mb-1">Blue Picks</h2>
+        {/* Left Column: Blue Side Picks */}
+        <div style={{ width: '240px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+          <h2 style={{ fontSize: '12px', fontWeight: 'bold', letterSpacing: '2px', color: '#60a5fa', textTransform: 'uppercase', margin: 0 }}>Blue Picks</h2>
           {bluePicks.map((champ, idx) => (
             <div 
-              key={`blue-pick-${idx}`}
-              onClick={() => handleSlotClick('bluePick', idx)}
-              className={`h-20 border bg-slate-900/60 rounded flex items-center p-2 gap-3 cursor-pointer transition-all ${champ ? 'border-blue-600/80' : 'border-slate-800 hover:border-blue-500/40'}`}
+              key={`b-pick-${idx}`} onClick={() => handleSlotClick('bluePick', idx)}
+              style={{ height: '76px', border: champ ? '2px solid #2563eb' : '1px solid #1e293b', backgroundColor: 'rgba(15, 23, 42, 0.6)', borderRadius: '6px', display: 'flex', alignItems: 'center', padding: '8px', gap: '12px', cursor: 'pointer', boxSizing: 'border-box' }}
             >
-              <div className="w-14 h-14 bg-slate-950 rounded overflow-hidden flex items-center justify-center border border-slate-800 flex-shrink-0">
-                {champ ? (
-                  <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} alt={champ.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-6 h-6 border-2 border-dashed border-slate-700 rounded-full" />
-                )}
+              <div style={{ width: '56px', height: '56px', backgroundColor: '#020617', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #1e293b', flexShrink: 0 }}>
+                {champ ? <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '24px', height: '24px', border: '2px dashed #334155', borderRadius: '50%' }} />}
               </div>
-              <div className="truncate">
-                <div className="font-bold text-sm truncate">{champ ? champ.name : 'Empty Slot'}</div>
-                <div className="text-[10px] text-slate-500 font-mono">PICK {idx + 1}</div>
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{champ ? champ.name : 'Empty Slot'}</div>
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>POSITION {idx + 1}</div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Center Canvas: Filtering Engine & Grid System */}
-        <div className="flex-1 bg-slate-900/30 rounded border border-slate-900 p-4 flex flex-col gap-4">
+        {/* Center Column: Search Engine & Grid System */}
+        <div style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.2)', borderRadius: '8px', border: '1px solid #0f172a', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          {/* Filtering Controls */}
-          <div className="flex gap-3 items-center">
+          {/* Controls Bar */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <input 
               type="text" 
               placeholder="Search Champion..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-slate-900 border border-slate-800 rounded px-4 py-2 text-sm focus:outline-none focus:border-slate-600 placeholder-slate-500"
+              style={{ flex: 1, backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '4px', padding: '8px 16px', fontSize: '14px', color: 'white', outline: 'none' }}
             />
             
-            {/* Position Filter Buttons */}
-            <div className="flex bg-slate-900 p-1 rounded border border-slate-800 gap-1">
+            {/* Position Roles Select */}
+            <div style={{ display: 'flex', backgroundColor: '#0f172a', padding: '4px', borderRadius: '4px', border: '1px solid #1e293b', gap: '4px' }}>
               {['All', 'TOP', 'JNG', 'MID', 'ADC', 'SUP'].map((role) => (
                 <button
-                  key={role}
-                  onClick={() => setSelectedRole(role)}
-                  className={`px-3 py-1 text-xs font-bold rounded transition-all ${selectedRole === role ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:text-white'}`}
+                  key={role} onClick={() => setSelectedRole(role)}
+                  style={{ padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer', backgroundColor: selectedRole === role ? '#1e293b' : 'transparent', color: selectedRole === role ? 'white' : '#94a3b8' }}
                 >
-                  {role === 'All' ? 'ALL' : (
-                    <span className="flex items-center gap-1">
-                      <img src={`/assets/roles/${role.toLowerCase()}.png`} alt={role} className="w-3 h-3 failover-hidden inline-block" onError={(e)=>{(e.target as HTMLElement).style.display='none'}} />
-                      {role}
-                    </span>
-                  )}
+                  {role}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Champion Selection Matrix */}
-          <div className="flex-1 overflow-y-auto pr-1 grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-[520px]">
+          {/* Grid Container */}
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: '8px', overflowY: 'auto', maxHeight: '500px', paddingRight: '4px' }}>
             {filteredChampions.map((champ) => {
               const isSelected = selectedChamp?.id === champ.id;
               return (
                 <div 
-                  key={champ.id}
-                  onClick={() => setSelectedChamp(isSelected ? null : champ)}
-                  className={`aspect-square bg-slate-900 border rounded cursor-pointer overflow-hidden relative group transition-all duration-150 ${isSelected ? 'border-yellow-500 scale-95 ring-2 ring-yellow-500/50' : 'border-slate-800 hover:border-slate-600'}`}
+                  key={champ.id} onClick={() => setSelectedChamp(isSelected ? null : champ)}
+                  style={{ aspectRatio: '1/1', backgroundColor: '#0f172a', border: isSelected ? '2px solid #eab308' : '1px solid #1e293b', borderRadius: '4px', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
                 >
-                  <img 
-                    src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} 
-                    alt={champ.name} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-150"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-slate-950/90 text-[10px] text-center py-0.5 truncate border-t border-slate-800/40">
+                  <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(2, 6, 23, 0.9)', fontSize: '10px', textAlign: 'center', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderTop: '1px solid #1e293b' }}>
                     {champ.name}
                   </div>
                 </div>
@@ -257,25 +194,20 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Side: Red Team Picks */}
-        <div className="w-64 flex flex-col gap-3">
-          <h2 className="text-xs font-bold tracking-widest text-red-400 uppercase mb-1 text-right">Red Picks</h2>
+        {/* Right Column: Red Side Picks */}
+        <div style={{ width: '240px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+          <h2 style={{ fontSize: '12px', fontWeight: 'bold', letterSpacing: '2px', color: '#f87171', textTransform: 'uppercase', margin: 0, textAlign: 'right' }}>Red Picks</h2>
           {redPicks.map((champ, idx) => (
             <div 
-              key={`red-pick-${idx}`}
-              onClick={() => handleSlotClick('redPick', idx)}
-              className={`h-20 border bg-slate-900/60 rounded flex items-center justify-between p-2 gap-3 cursor-pointer transition-all ${champ ? 'border-red-600/80' : 'border-slate-800 hover:border-red-500/40'}`}
+              key={`r-pick-${idx}`} onClick={() => handleSlotClick('redPick', idx)}
+              style={{ height: '76px', border: champ ? '2px solid #dc2626' : '1px solid #1e293b', backgroundColor: 'rgba(15, 23, 42, 0.6)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', gap: '12px', cursor: 'pointer', boxSizing: 'border-box' }}
             >
-              <div className="truncate text-right w-full">
-                <div className="font-bold text-sm truncate">{champ ? champ.name : 'Empty Slot'}</div>
-                <div className="text-[10px] text-slate-500 font-mono">PICK {idx + 1}</div>
+              <div style={{ overflow: 'hidden', textAlign: 'right', width: '100%' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{champ ? champ.name : 'Empty Slot'}</div>
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>POSITION {idx + 1}</div>
               </div>
-              <div className="w-14 h-14 bg-slate-950 rounded overflow-hidden flex items-center justify-center border border-slate-800 flex-shrink-0">
-                {champ ? (
-                  <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} alt={champ.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-6 h-6 border-2 border-dashed border-slate-700 rounded-full" />
-                )}
+              <div style={{ width: '56px', height: '56px', backgroundColor: '#020617', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #1e293b', flexShrink: 0 }}>
+                {champ ? <img src={`https://ddragon.leagueoflegends.com/cdn/14.5.1/img/champion/${champ.image.full}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '24px', height: '24px', border: '2px dashed #334155', borderRadius: '50%' }} />}
               </div>
             </div>
           ))}
